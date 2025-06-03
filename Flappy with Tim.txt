@@ -1,0 +1,98 @@
+Flappy with Tim: 
+
+Inputs -> Bird.y, top pipe, bottom pipe
+Outputs -> jump? 
+Activation function -> tanh [-1, 1]
+Population size -> 100
+Fitness Function -> distance
+Max generations -> 30 
+
+
+def run(config_path):
+	config = neat.config.Config (...)
+	p = neat.Population(config)
+	
+	p.add_reporter(neat.StdoutReporter(True))
+	stats = neat.StatisticsReporter()
+	p.add_reporter(stats)
+	
+	winner = p.run(fitness_function, 50) ## What's the fitness function ? main (genomes, config) POde mudar o nome pra eval_genomes ou algo do tipo e modificar para mais de um pássaro ao mesmo tempo (da pra fazer um para cada, mas nao é eficiente). basicamente for bird in birds: e quando morre, da pop
+
+
+if __name__ == "__main__":
+	local_dir = os.path.firname(__file__)
+	config_path = os.path.join(local_dir, "config-feedforward.txt")
+	run(config_path)
+
+
+
+neat
+
+temos que dar run da população sobre a função de fitness (que acaba sendo a main, ela vai executar o jogo e retornar a fitness da população) sobre uma quantidade de gerações.
+
+main agora recebe os parâmetros genome e config.
+poderíamos rodar um for e criar um jogo para cada pássaro mas não é eficiente. Entao roda todos os pássaros de uma vez.
+
+lista de pássaros (jogadores) 
+
+o que um pássaro fazia, agora é for Bird in Birds: (checar colisão, etc)
+
+criar as listas, nets e ge (genomes), each neural network controls a Bird (and each genime are the Bird weights of the nn) 
+
+
+for _, g in genomes:
+	net = neat.nn.FeedForwardNetwork.create(g,config)
+	nets.append(net)
+	birds.append(Bird(230, 350))
+	g.fitness = 0
+	ge.append(g)
+
+
+
+
+remove birds that colide (or die) 
+
+
+for x, Bird in enumerate(Birds):
+	if pipe.collide(Bird):
+		ge[x].fitness -= 1
+		birds.pop(x)
+		nets.pop(x)
+		ge.pop(x)
+
+
+
+Movimentação:
+
+for x, Bird in enumerate(birds):
+	Bird.move()
+	ge[x].fitness += 0.1
+	
+	output = nets[x].activate((Bird.y, abs(Bird.y - pipes[pipe_ind].height), abs(Bird.y - pipes[pipe_ind].bottom)))
+	
+	if output[0] > 0.5 :
+		Bird.jump()
+
+
+if len(birds) == 0:
+	run = false
+	break
+
+
+
+modify to draw all birds
+
+
+
+if score > 50:     \\creating a threshold
+	break
+
+save winner into a pickle
+
+
+
+
+
+
+
+Check pong configuration 

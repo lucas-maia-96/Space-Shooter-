@@ -113,7 +113,7 @@ def collisions():
     collision_sprites = pygame.sprite.spritecollide(
         player, meteor_sprites, True, pygame.sprite.collide_mask)
     if collision_sprites:
-        running = False
+        return True  # Collision occurred, game over
 
     for laser in laser_sprites:
         collided_sprites = pygame.sprite.spritecollide(
@@ -121,6 +121,7 @@ def collisions():
         if collided_sprites:
             laser.kill()
             AnimatedExplosion(explosion_frames, laser.rect.midtop, all_sprites)
+    return False  # No collision
 
 
 def display_score():
@@ -131,71 +132,80 @@ def display_score():
     display_surface.blit(text_surf, text_rect)
     pygame.draw.rect(display_surface, '#cdcdcd',
                      text_rect.inflate(20, 20).move(0, -4), 4, 8)
+    return current_time
 
 
-# General setup
-pygame.init()
-WINDOW_WIDTH, WINDOW_HEIGHT = 1280, 720
-display_surface = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
-pygame.display.set_caption('Space Shooter')
-running = True
-clock = pygame.time.Clock()
+def main():
+    global display_surface, clock, all_sprites, meteor_sprites, laser_sprites, player, star_surf, meteor_surf, laser_surf, font, explosion_frames, laser_sound, explosion_sound, damage_sound, game_music, WINDOW_WIDTH, WINDOW_HEIGHT
 
-# IMPORTS
+    # General setup
+    pygame.init()
+    WINDOW_WIDTH, WINDOW_HEIGHT = 1280, 720
+    display_surface = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+    pygame.display.set_caption('Space Shooter')
+    clock = pygame.time.Clock()
 
-star_surf = pygame.image.load(join('images', 'star.png')).convert_alpha()
-meteor_surf = pygame.image.load(join('images', 'meteor.png')).convert_alpha()
-laser_surf = pygame.image.load(join('images', 'laser.png')).convert_alpha()
-font = pygame.font.Font(join('images', 'Oxanium-Bold.ttf'), 20)
-explosion_frames = [pygame.image.load(
-    join('images', 'explosion', f'{i}.png')).convert_alpha() for i in range(21)]
+    # IMPORTS
+    star_surf = pygame.image.load(join('images', 'star.png')).convert_alpha()
+    meteor_surf = pygame.image.load(
+        join('images', 'meteor.png')).convert_alpha()
+    laser_surf = pygame.image.load(join('images', 'laser.png')).convert_alpha()
+    font = pygame.font.Font(join('images', 'Oxanium-Bold.ttf'), 20)
+    explosion_frames = [pygame.image.load(
+        join('images', 'explosion', f'{i}.png')).convert_alpha() for i in range(21)]
 
-laser_sound = pygame.mixer.Sound(join('audio', 'laser.wav'))
-laser_sound.set_volume(0.2)
-explosion_sound = pygame.mixer.Sound(join('audio', 'explosion.wav'))
-explosion_sound.set_volume(0.2)
-damage_sound = pygame.mixer.Sound(join('audio', 'damage.ogg'))
-game_music = pygame.mixer.Sound(join('audio', 'game_music.wav'))
-game_music.set_volume(0.08)
-game_music.play(loops=-1)
+    laser_sound = pygame.mixer.Sound(join('audio', 'laser.wav'))
+    laser_sound.set_volume(0.2)
+    explosion_sound = pygame.mixer.Sound(join('audio', 'explosion.wav'))
+    explosion_sound.set_volume(0.2)
+    damage_sound = pygame.mixer.Sound(join('audio', 'damage.ogg'))
+    game_music = pygame.mixer.Sound(join('audio', 'game_music.wav'))
+    game_music.set_volume(0.08)
+    game_music.play(loops=-1)
 
+    # SPRITES
+    all_sprites = pygame.sprite.Group()
+    meteor_sprites = pygame.sprite.Group()
+    laser_sprites = pygame.sprite.Group()
 
-# SPRITES
-all_sprites = pygame.sprite.Group()
-meteor_sprites = pygame.sprite.Group()
-laser_sprites = pygame.sprite.Group()
+    for i in range(20):
+        Star(all_sprites, star_surf)
 
-for i in range(20):
-    Star(all_sprites, star_surf)
+    player = Player(all_sprites)
 
-player = Player(all_sprites)
+    # custom events -> meteor event
+    meteor_event = pygame.event.custom_type()
+    pygame.time.set_timer(meteor_event, 500)
 
+    running = True
+    while running:
+        dt = clock.tick() / 1000
+        # Event loop
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                running = False
+            if event.type == meteor_event:
+                x, y = randint(0, WINDOW_WIDTH), randint(-200, -100)
+                Meteor(meteor_surf, (x, y), (all_sprites, meteor_sprites))
 
-# custom events -> meteor event
-meteor_event = pygame.event.custom_type()
-pygame.time.set_timer(meteor_event, 500)
+        # update
+        all_sprites.update(dt)
 
-while running:
-    dt = clock.tick() / 1000
-    # Event loop
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
+        if collisions():
             running = False
-        if event.type == meteor_event:
-            x, y = randint(0, WINDOW_WIDTH), randint(-200, -100)
-            Meteor(meteor_surf, (x, y), (all_sprites, meteor_sprites))
 
-    # update
-    all_sprites.update(dt)
+        # Draw the game
+        display_surface.fill('#04010f')
+        all_sprites.draw(display_surface)
 
-    collisions()
+        score = display_score()
 
-    # Draw the game
-    display_surface.fill('#04010f')
-    all_sprites.draw(display_surface)
+        pygame.display.update()
 
-    display_score()
+    pygame.quit()
+    return score
 
-    pygame.display.update()
 
-pygame.quit()
+if __name__ == '__main__':
+    score = main()
+    print(f"Final Score: {score}")
