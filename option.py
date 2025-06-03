@@ -270,67 +270,69 @@ class SpaceShooterGame:
 
 
 def eval_genomes(genomes, config):
-
     dt = 1/60
-    games = []
-    nets = []
-    ge = []
-
-    MAX_STEPS = 60 * 90  # 30 segundos a 60 FPS
+    MAX_STEPS = 60 * 90  # 90 segundos a 60 FPS
+    N_EPISODES = 3       # Número de episódios por genoma
 
     for genome_id, genome in genomes:
-        net = neat.nn.FeedForwardNetwork.create(genome, config)
-        game = SpaceShooterGame(render=False)
-        games.append(game)
-        nets.append(net)
-        ge.append(genome)
-        genome.fitness = 0
+        episode_fitness = []
 
-    alive = [True]*len(games)
-    steps = 0
+        for ep in range(N_EPISODES):
+            # Seeds diferentes para cada episódio
+            random.seed(ep)
+            pyseed(ep)
 
-    while any(alive) and steps < MAX_STEPS:
-        for i, game in enumerate(games):
-            if not alive[i]:
-                continue
-            if not game.running and alive[i]:
-                ge[i].fitness -= 5
-                alive[i] = False
-                continue
+            net = neat.nn.FeedForwardNetwork.create(genome, config)
+            game = SpaceShooterGame(render=False)
+            fitness = 0
+            steps = 0
 
-            state = game.get_state()
-            output = nets[i].activate(state)
-            move_x = 1 if output[0] > 0.5 else (-1 if output[0] < -0.5 else 0)
-            move_y = 1 if output[1] > 0.5 else (-1 if output[1] < -0.5 else 0)
-            shoot = 1 if output[2] > 0.5 else 0
-            game.step([move_x, move_y, shoot], dt)
+            alive = True
+            while alive and steps < MAX_STEPS:
+                if not game.running:
+                    fitness -= 5
+                    alive = False
+                    break
 
-            # FITNESS
-            ge[i].fitness += dt * 0.2
-            ge[i].fitness += game.meteors_destroyed * 20.0
-            game.meteors_destroyed = 0
+                state = game.get_state()
+                output = net.activate(state)
+                move_x = 1 if output[0] > 0.5 else (
+                    -1 if output[0] < -0.5 else 0)
+                move_y = 1 if output[1] > 0.5 else (
+                    -1 if output[1] < -0.5 else 0)
+                shoot = 1 if output[2] > 0.5 else 0
+                game.step([move_x, move_y, shoot], dt)
 
-            # Penaliza ficar parado
-            if abs(game.player.direction.x) < 0.01 and abs(game.player.direction.y) < 0.01:
-                ge[i].fitness -= dt * 0.2
+                # FITNESS
+                fitness += dt * 0.2
+                fitness += game.meteors_destroyed * 20.0
+                game.meteors_destroyed = 0
 
-            margin = 100
-            px, py = game.player.rect.center
-            dist_left = px
-            dist_right = WINDOW_WIDTH - px
-            dist_top = py
-            dist_bottom = WINDOW_HEIGHT - py
-            min_dist_to_edge = min(dist_left, dist_right,
-                                   dist_top, dist_bottom)
-            if min_dist_to_edge < margin:
-                # Penaliza mais forte perto da borda
-                ge[i].fitness -= dt * \
-                    (2.0 + (margin - min_dist_to_edge) / margin * 3.0)
+                # Penaliza ficar parado
+                if abs(game.player.direction.x) < 0.01 and abs(game.player.direction.y) < 0.01:
+                    fitness -= dt * 0.2
 
-            if ge[i].fitness < 0:
-                ge[i].fitness = 0
+                margin = 100
+                px, py = game.player.rect.center
+                dist_left = px
+                dist_right = WINDOW_WIDTH - px
+                dist_top = py
+                dist_bottom = WINDOW_HEIGHT - py
+                min_dist_to_edge = min(dist_left, dist_right,
+                                       dist_top, dist_bottom)
+                if min_dist_to_edge < margin:
+                    fitness -= dt * \
+                        (2.0 + (margin - min_dist_to_edge) / margin * 3.0)
 
-        steps += 1
+                if fitness < 0:
+                    fitness = 0
+
+                steps += 1
+
+            episode_fitness.append(fitness)
+
+        # Fitness final é a média dos episódios
+        genome.fitness = sum(episode_fitness) / N_EPISODES
 
 # --- Treinamento NEAT ---
 
@@ -344,7 +346,7 @@ def run_neat(config_file):
     stats = neat.StatisticsReporter()
     p.add_reporter(stats)
 
-    winner = p.run(eval_genomes, 100)
+    winner = p.run(eval_genomes, 5)
 
     with open("best_genome.pkl", "wb") as f:
         pickle.dump(winner, f)
