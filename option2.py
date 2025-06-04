@@ -1,13 +1,13 @@
-from neat.parallel import ParallelEvaluator
-import pygame
-from os.path import join
-from random import randint, uniform, seed as pyseed
-import random
-import pickle
-import neat
-import os
-import sys
 import math
+import sys
+import os
+import neat
+import pickle
+import random
+from random import randint, uniform, seed as pyseed
+from os.path import join
+import pygame
+from neat.parallel import ParallelEvaluator
 
 if len(sys.argv) == 2 and sys.argv[1] == "train":
     os.environ["SDL_VIDEODRIVER"] = "dummy"
@@ -16,6 +16,9 @@ pygame.init()
 pygame.display.set_mode((1, 1))  # Cria contexto de vídeo oculto
 
 WINDOW_WIDTH, WINDOW_HEIGHT = 1280, 720
+
+SAFE_RADIUS = 80  # pixels, raio de segurança ao redor da nave
+BORDER_MARGIN = 120  # margem para penalização de borda
 
 
 class Player(pygame.sprite.Sprite):
@@ -88,7 +91,7 @@ class Meteor(pygame.sprite.Sprite):
         self.original_surf = surf
         self.image = self.original_surf
         self.rect = self.image.get_frect(center=pos)
-        self.life_time = 6.0  # segundos
+        self.life_time = 10.0  # segundos
         self.time_alive = 0.0
         if direction is not None:
             self.direction = direction
@@ -177,16 +180,14 @@ class SpaceShooterGame:
     def _spawn_meteors(self, dt):
         self.meteor_timer += dt
         if self.meteor_timer > 0.5:
-            px, py = self.player.rect.center  # Posição atual do player
-
-            if random.random() < 0.1:  # 10% dos meteoros miram o player
-                x = random.choice([0, WINDOW_WIDTH])
-                y = randint(-200, -100)
+            px, py = self.player.rect.center
+            x = randint(0, WINDOW_WIDTH)
+            y = -100
+            if random.random() < 0.5:  # 50% dos meteoros miram o player
                 direction = pygame.Vector2(px - x, py - y).normalize()
                 Meteor(self.meteor_surf, (x, y), (self.all_sprites,
                                                   self.meteor_sprites), direction=direction)
             else:
-                x, y = randint(0, WINDOW_WIDTH), randint(-200, -100)
                 Meteor(self.meteor_surf, (x, y),
                        (self.all_sprites, self.meteor_sprites))
             self.meteor_timer = 0.0
@@ -197,7 +198,7 @@ class SpaceShooterGame:
         if collision_sprites:
             self.running = False
 
-         # Colisão com as bordas (paredes letais)
+        # Colisão com as bordas (paredes letais)
         if (self.player.rect.left <= 0 or
             self.player.rect.right >= WINDOW_WIDTH or
             self.player.rect.top <= 0 or
@@ -231,7 +232,14 @@ class SpaceShooterGame:
             if radar[sector] < norm_dist:
                 radar[sector] = norm_dist
 
-        # Estado final: posição normalizada do player + radar + pode atirar
+        # Marque setores que apontam para fora da tela como perigo máximo
+        for i in range(num_sectors):
+            theta = i * (2 * math.pi / num_sectors)
+            test_x = px + math.cos(theta) * max_dist
+            test_y = py + math.sin(theta) * max_dist
+            if not (0 <= test_x < WINDOW_WIDTH and 0 <= test_y < WINDOW_HEIGHT):
+                radar[i] = 1.0  # Perigo máximo
+
         state = [
             px / WINDOW_WIDTH * 2 - 1,
             py / WINDOW_HEIGHT * 2 - 1,
@@ -246,6 +254,10 @@ class SpaceShooterGame:
             return
         self.display_surface.fill('#04010f')
         self.all_sprites.draw(self.display_surface)
+        # Desenha o raio de segurança
+        px, py = self.player.rect.center
+        pygame.draw.circle(self.display_surface, (255, 0, 0),
+                           (int(px), int(py)), SAFE_RADIUS, 2)
         pygame.display.update()
 
     def quit(self):
@@ -262,15 +274,11 @@ def eval_single_genome(genome, config):
     total_fitness = 0.0
 
     for ep in range(N_EPISODES):
-        # Seeds diferentes para cada episódio
-        # random.seed(ep)
-        # pyseed(ep)
-
         net = neat.nn.FeedForwardNetwork.create(genome, config)
         game = SpaceShooterGame(render=False)
         fitness = 0
         steps = 0
-        SAFE_RADIUS = 80  # pixels
+        time_near_edge = 0
 
         alive = True
         while alive and steps < MAX_STEPS:
@@ -290,45 +298,43 @@ def eval_single_genome(genome, config):
 
             # FITNESS AJUSTADO
 
-            # Recompensa sobreviver (pouco)
-            fitness += dt * 0.1
-
-            # Recompensa MUITO destruir meteoros
+            # Recompensa destruir meteoros
             fitness += game.meteors_destroyed * 50.0
             game.meteors_destroyed = 0
 
-            px, _ = game.player.rect.center
-            if (px - SAFE_RADIUS < 0 or px + SAFE_RADIUS > WINDOW_WIDTH):
-                # Avisa ou penaliza
-                # Exemplo: penalização forte
-                fitness -= dt * 10.0
-            # Ou: self.running = False  # Se quiser terminar o episódio
-
             # Penaliza ficar parado
             if abs(game.player.direction.x) < 0.01 and abs(game.player.direction.y) < 0.01:
-                fitness -= dt * 0.5  # Mais forte!
+                fitness -= dt * 0.5
 
             # Penaliza movimento só para direita (vício do canto direito)
             if game.player.direction.x > 0.8:
-                fitness -= dt * 1.0  # Forte penalização
+                fitness -= dt * 1.0
 
-            # Penaliza ficar perto das bordas/cantos (aumente a força!)
-            margin = 120
+            # Penalização progressiva por tempo na borda
             left = game.player.rect.left
             right = game.player.rect.right
             top = game.player.rect.top
             bottom = game.player.rect.bottom
-
             dist_left = left
             dist_right = WINDOW_WIDTH - right
             dist_top = top
             dist_bottom = WINDOW_HEIGHT - bottom
             min_dist_to_edge = min(dist_left, dist_right,
                                    dist_top, dist_bottom)
-            if min_dist_to_edge < margin:
-                # Penalização exponencial quanto mais perto da borda
-                edge_penalty = (margin - min_dist_to_edge) / margin
-                fitness -= dt * (10.0 * (edge_penalty ** 2))
+            if min_dist_to_edge < BORDER_MARGIN:
+                time_near_edge += dt
+                edge_penalty = (
+                    BORDER_MARGIN - min_dist_to_edge) / BORDER_MARGIN
+                fitness -= dt * (10.0 * (edge_penalty ** 2) +
+                                 20.0 * time_near_edge)
+            else:
+                time_near_edge = 0
+
+            # Penaliza se o raio de segurança sair da tela
+            px, py = game.player.rect.center
+            if (px - SAFE_RADIUS < 0 or px + SAFE_RADIUS > WINDOW_WIDTH or
+                    py - SAFE_RADIUS < 0 or py + SAFE_RADIUS > WINDOW_HEIGHT):
+                fitness -= dt * 10.0
 
             # Se morreu, penaliza muito!
             if not game.running:
@@ -353,9 +359,8 @@ def run_neat(config_file):
     stats = neat.StatisticsReporter()
     p.add_reporter(stats)
 
-    # Ajuste o número de workers conforme sua máquina!
     pe = ParallelEvaluator(num_workers=8, eval_function=eval_single_genome)
-    winner = p.run(pe.evaluate, 80)
+    winner = p.run(pe.evaluate, 20)
 
     with open("best_genome.pkl", "wb") as f:
         pickle.dump(winner, f)
@@ -365,7 +370,6 @@ def run_neat(config_file):
 
 
 def play_best(config_file, genome_file):
-    # Semente fixa para ambiente igual ao do treino!
 
     config = neat.Config(
         neat.DefaultGenome,
@@ -378,7 +382,6 @@ def play_best(config_file, genome_file):
         genome = pickle.load(f)
     net = neat.nn.FeedForwardNetwork.create(genome, config)
     game = SpaceShooterGame(render=True)
-    # Use dt fixo para garantir física idêntica ao treino!
     dt = 1/60
     while game.running:
         for event in pygame.event.get():
