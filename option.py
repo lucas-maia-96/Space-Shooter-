@@ -280,16 +280,25 @@ def eval_single_genome(genome, config):
             shoot = 1 if output[2] > 0.5 else 0
             game.step([move_x, move_y, shoot], dt)
 
-            # FITNESS
-            fitness += dt * 0.2
-            fitness += game.meteors_destroyed * 20.0
+            # FITNESS AJUSTADO
+
+            # Recompensa sobreviver (pouco)
+            fitness += dt * 0.1
+
+            # Recompensa MUITO destruir meteoros
+            fitness += game.meteors_destroyed * 50.0
             game.meteors_destroyed = 0
 
             # Penaliza ficar parado
             if abs(game.player.direction.x) < 0.01 and abs(game.player.direction.y) < 0.01:
-                fitness -= dt * 0.2
+                fitness -= dt * 0.5  # Mais forte!
 
-            margin = 100
+            # Penaliza movimento só para direita (vício do canto direito)
+            if game.player.direction.x > 0.8:
+                fitness -= dt * 1.0  # Forte penalização
+
+            # Penaliza ficar perto das bordas/cantos (aumente a força!)
+            margin = 120
             px, py = game.player.rect.center
             dist_left = px
             dist_right = WINDOW_WIDTH - px
@@ -298,11 +307,13 @@ def eval_single_genome(genome, config):
             min_dist_to_edge = min(dist_left, dist_right,
                                    dist_top, dist_bottom)
             if min_dist_to_edge < margin:
-                fitness -= dt * \
-                    (3.0 + (margin - min_dist_to_edge) / margin * 3.0)
+                # Penalização exponencial quanto mais perto da borda
+                edge_penalty = (margin - min_dist_to_edge) / margin
+                fitness -= dt * (10.0 * (edge_penalty ** 2))
 
-            if fitness < 0:
-                fitness = 0
+            # Se morreu, penaliza muito!
+            if not game.running:
+                fitness -= 20
 
             steps += 1
 
