@@ -1,3 +1,4 @@
+from neat.parallel import ParallelEvaluator
 import pygame
 from os.path import join
 from random import randint, uniform, seed as pyseed
@@ -18,6 +19,7 @@ WINDOW_WIDTH, WINDOW_HEIGHT = 1280, 720
 
 
 class Player(pygame.sprite.Sprite):
+
     def __init__(self, groups, laser_surf, laser_group, all_sprites):
         super().__init__(groups)
         self.image = pygame.image.load(
@@ -58,6 +60,7 @@ class Player(pygame.sprite.Sprite):
 
 
 class Star(pygame.sprite.Sprite):
+
     def __init__(self, groups, surf):
         super().__init__(groups)
         self.image = surf
@@ -79,6 +82,7 @@ class Laser(pygame.sprite.Sprite):
 
 
 class Meteor(pygame.sprite.Sprite):
+
     def __init__(self, surf, pos, groups, direction=None):
         super().__init__(groups)
         self.original_surf = surf
@@ -106,6 +110,7 @@ class Meteor(pygame.sprite.Sprite):
 
 
 class AnimatedExplosion(pygame.sprite.Sprite):
+
     def __init__(self, frames, pos, groups):
         super().__init__(groups)
         self.frames = frames
@@ -124,6 +129,7 @@ class AnimatedExplosion(pygame.sprite.Sprite):
 
 
 class SpaceShooterGame:
+
     def __init__(self, render=False):
         self.render = render
         if render:
@@ -178,7 +184,7 @@ class SpaceShooterGame:
                 y = randint(-200, -100)
                 direction = pygame.Vector2(px - x, py - y).normalize()
                 Meteor(self.meteor_surf, (x, y), (self.all_sprites,
-                       self.meteor_sprites), direction=direction)
+                                                  self.meteor_sprites), direction=direction)
             else:
                 x, y = randint(0, WINDOW_WIDTH), randint(-200, -100)
                 Meteor(self.meteor_surf, (x, y),
@@ -200,34 +206,6 @@ class SpaceShooterGame:
                 if self.render:
                     AnimatedExplosion(self.explosion_frames,
                                       laser.rect.midtop, self.all_sprites)
-
-    # def get_state(self):
-    #     px, py = self.player.rect.center
-
-    #     meteors = []
-    #     for m in self.meteor_sprites:
-    #         mx, my = m.rect.center
-    #         dx, dy = mx - px, my - py
-    #         dist = (dx*dx + dy*dy)**0.5
-    #         vx, vy = m.direction.x * m.speed, m.direction.y * m.speed
-    #         meteors.append((dist, dx / WINDOW_WIDTH, dy /
-    #                         WINDOW_HEIGHT, vx / 500, vy / 500))
-
-    #     meteors.sort(key=lambda x: x[0])
-    #     N = 8
-    #     state = [
-    #         px / WINDOW_WIDTH * 2 - 1,
-    #         py / WINDOW_HEIGHT * 2 - 1,
-    #     ]
-    #     for i in range(N):
-    #         if i < len(meteors):
-    #             _, dx, dy, vx, vy = meteors[i]
-    #             state += [dx, dy, vx, vy]
-    #         else:
-    #             state += [0, 0, 0, 0]
-
-    #     state.append(1.0 if self.player.can_shoot else 0.0)
-    #     return state
 
     def get_state(self):
         px, py = self.player.rect.center
@@ -266,78 +244,77 @@ class SpaceShooterGame:
     def quit(self):
         pygame.quit()
 
-# --- Função de avaliação para o NEAT ---
+# --- Função de avaliação PARA UM GENOMA (usada pelo ParallelEvaluator) ---
 
 
-def eval_genomes(genomes, config):
+def eval_single_genome(genome, config):
+
     dt = 1/60
     MAX_STEPS = 60 * 90  # 90 segundos a 60 FPS
     N_EPISODES = 3       # Número de episódios por genoma
+    total_fitness = 0.0
 
-    for genome_id, genome in genomes:
-        episode_fitness = []
+    for ep in range(N_EPISODES):
+        # Seeds diferentes para cada episódio
+        # random.seed(ep)
+        # pyseed(ep)
 
-        for ep in range(N_EPISODES):
-            # Seeds diferentes para cada episódio
-            random.seed(ep)
-            pyseed(ep)
+        net = neat.nn.FeedForwardNetwork.create(genome, config)
+        game = SpaceShooterGame(render=False)
+        fitness = 0
+        steps = 0
 
-            net = neat.nn.FeedForwardNetwork.create(genome, config)
-            game = SpaceShooterGame(render=False)
-            fitness = 0
-            steps = 0
+        alive = True
+        while alive and steps < MAX_STEPS:
+            if not game.running:
+                fitness -= 5
+                alive = False
+                break
 
-            alive = True
-            while alive and steps < MAX_STEPS:
-                if not game.running:
-                    fitness -= 5
-                    alive = False
-                    break
+            state = game.get_state()
+            output = net.activate(state)
+            move_x = 1 if output[0] > 0.5 else (
+                -1 if output[0] < -0.5 else 0)
+            move_y = 1 if output[1] > 0.5 else (
+                -1 if output[1] < -0.5 else 0)
+            shoot = 1 if output[2] > 0.5 else 0
+            game.step([move_x, move_y, shoot], dt)
 
-                state = game.get_state()
-                output = net.activate(state)
-                move_x = 1 if output[0] > 0.5 else (
-                    -1 if output[0] < -0.5 else 0)
-                move_y = 1 if output[1] > 0.5 else (
-                    -1 if output[1] < -0.5 else 0)
-                shoot = 1 if output[2] > 0.5 else 0
-                game.step([move_x, move_y, shoot], dt)
+            # FITNESS
+            fitness += dt * 0.2
+            fitness += game.meteors_destroyed * 20.0
+            game.meteors_destroyed = 0
 
-                # FITNESS
-                fitness += dt * 0.2
-                fitness += game.meteors_destroyed * 20.0
-                game.meteors_destroyed = 0
+            # Penaliza ficar parado
+            if abs(game.player.direction.x) < 0.01 and abs(game.player.direction.y) < 0.01:
+                fitness -= dt * 0.2
 
-                # Penaliza ficar parado
-                if abs(game.player.direction.x) < 0.01 and abs(game.player.direction.y) < 0.01:
-                    fitness -= dt * 0.2
+            margin = 100
+            px, py = game.player.rect.center
+            dist_left = px
+            dist_right = WINDOW_WIDTH - px
+            dist_top = py
+            dist_bottom = WINDOW_HEIGHT - py
+            min_dist_to_edge = min(dist_left, dist_right,
+                                   dist_top, dist_bottom)
+            if min_dist_to_edge < margin:
+                fitness -= dt * \
+                    (3.0 + (margin - min_dist_to_edge) / margin * 3.0)
 
-                margin = 100
-                px, py = game.player.rect.center
-                dist_left = px
-                dist_right = WINDOW_WIDTH - px
-                dist_top = py
-                dist_bottom = WINDOW_HEIGHT - py
-                min_dist_to_edge = min(dist_left, dist_right,
-                                       dist_top, dist_bottom)
-                if min_dist_to_edge < margin:
-                    fitness -= dt * \
-                        (2.0 + (margin - min_dist_to_edge) / margin * 3.0)
+            if fitness < 0:
+                fitness = 0
 
-                if fitness < 0:
-                    fitness = 0
+            steps += 1
 
-                steps += 1
+        total_fitness += fitness
 
-            episode_fitness.append(fitness)
+    return total_fitness / N_EPISODES
 
-        # Fitness final é a média dos episódios
-        genome.fitness = sum(episode_fitness) / N_EPISODES
-
-# --- Treinamento NEAT ---
+# --- Treinamento NEAT COM ParallelEvaluator ---
 
 
 def run_neat(config_file):
+
     config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction,
                          neat.DefaultSpeciesSet, neat.DefaultStagnation,
                          config_file)
@@ -346,13 +323,15 @@ def run_neat(config_file):
     stats = neat.StatisticsReporter()
     p.add_reporter(stats)
 
-    winner = p.run(eval_genomes, 5)
+    # Ajuste o número de workers conforme sua máquina!
+    pe = ParallelEvaluator(num_workers=8, eval_function=eval_single_genome)
+    winner = p.run(pe.evaluate, 100)
 
     with open("best_genome.pkl", "wb") as f:
         pickle.dump(winner, f)
     print("Melhor genoma salvo em best_genome.pkl")
 
-    # --- Visualizar o melhor agente ---
+# --- Visualizar o melhor agente ---
 
 
 def play_best(config_file, genome_file):

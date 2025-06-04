@@ -1,7 +1,7 @@
 [NEAT]
 fitness_criterion     = max
 fitness_threshold     = 5000
-pop_size              = 10
+pop_size              = 150
 reset_on_extinction   = True
 
 [DefaultStagnation]
@@ -15,9 +15,9 @@ survival_threshold = 0.2
 
 [DefaultGenome]
 # node activation options
-activation_default      = tanh
+activation_default      = relu
 activation_mutate_rate  = 0.0
-activation_options      = tanh
+activation_options      = relu
 
 # node aggregation options
 aggregation_default     = sum
@@ -53,7 +53,7 @@ node_add_prob           = 0.2
 node_delete_prob        = 0.1
 
 # network parameters
-num_hidden              = 0
+num_hidden              = 1
 num_inputs              = 19
 num_outputs             = 3
 
