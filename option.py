@@ -299,11 +299,15 @@ def eval_single_genome(genome, config):
 
             # Penaliza ficar perto das bordas/cantos (aumente a força!)
             margin = 120
-            px, py = game.player.rect.center
-            dist_left = px
-            dist_right = WINDOW_WIDTH - px
-            dist_top = py
-            dist_bottom = WINDOW_HEIGHT - py
+            left = game.player.rect.left
+            right = game.player.rect.right
+            top = game.player.rect.top
+            bottom = game.player.rect.bottom
+
+            dist_left = left
+            dist_right = WINDOW_WIDTH - right
+            dist_top = top
+            dist_bottom = WINDOW_HEIGHT - bottom
             min_dist_to_edge = min(dist_left, dist_right,
                                    dist_top, dist_bottom)
             if min_dist_to_edge < margin:
